@@ -18,7 +18,10 @@ def _checkExcept(func):
 
 
 class DataBase:
-
+    """
+    a layer on the dataBase to handle errors 
+    """
+    
     def __init__(self):
 
         self.__REDIS = redis.StrictRedis(host='127.0.0.1', port=6379 ,decode_responses= True)
