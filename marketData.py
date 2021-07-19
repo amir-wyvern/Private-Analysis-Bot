@@ -20,6 +20,7 @@ class Log:
 
 
 class AccessToDataBase( Log ):
+    """using madual database for connect to redis"""
 
     def __init__(self):
 
@@ -81,6 +82,10 @@ class RequestPrice( AccessToDataBase ):
                 self.log(f'Error [{e} | coin: {coin} ,timeFrame: {timeFrame}]' , '!!')
 
     def mainClerk(self):
+        """
+        Use async to send group requests Asynchronous to the binance server
+        Group request means that ,A request will be sent for each currency for each time frame (in this case just use '1m')
+        """
 
         async def startJob():
             
@@ -115,7 +120,7 @@ class RequestPrice( AccessToDataBase ):
 
                 await asyncio.gather(*tasks)
 
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # NOTE: this line is only used in Windows | in Linux is no need to use it 
         asyncio.run(startJob())
 
 
