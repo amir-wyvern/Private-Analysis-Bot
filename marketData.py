@@ -1,4 +1,4 @@
-from time import time
+from time import time ,sleep
 import logging
 import asyncio 
 import json
@@ -8,6 +8,8 @@ import aiohttp
 
 from database import DataBase
 from dotenv import dotenv_values
+
+from typing import Tuple
 
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p' )
 
@@ -26,14 +28,25 @@ class AccessToDataBase( Log ):
 
         self.con = DataBase()
 
-    def _coinPrice(self ,coin ,timeFrame ,mainPrice):
+    def _setCurrentPrice(self ,pair ,mainPrice ,timeFrame ):
         
-        return self.con._hset('coinPrice' ,f'{coin}:{timeFrame}' ,mainPrice)
+        return self.con._hset('pairCurrentPrice' ,f'{pair}:{timeFrame}' ,mainPrice)
 
-    def _coinsList(self ,start ,end):
+    def _setHistoryPrice(self ,pair ,priceData ,timeFrame ,startTime ,endTime):
+
+        return self.con._hset('pairHistoryPrice' ,f'{pair}:{timeFrame}|{startTime}:{endTime}' ,priceData)
+
+    def _getCurrentList(self) -> list:
         
-        return self.con._lrange('coinsList' ,start ,end)
+        return self.con._lrange('pairCurrentList' ,0 ,-1)
 
+    def _getHistoryList(self) -> dict:
+
+        return self.con._hgetall('pairHistoryList')
+
+    def _delKeyHistoryList(self ,key):
+
+        return self.con._hdel('pairHistoryList' ,key)
 
 class RequestPrice( AccessToDataBase ):
 
@@ -54,32 +67,40 @@ class RequestPrice( AccessToDataBase ):
             return 
 
         self.API_KEY = dic['API_KEY']
-
-    async def sendRequest(self ,coin ,timeFrame):
+        
+    async def sendRequest(self ,pair ,timeFrame ,tupeHistory : Tuple[int ,int] = False ) -> None:
 
         async with aiohttp.ClientSession() as session:
             
             try:
-                _json = {'symbol': coin ,'interval': timeFrame}
+                
+                _json = {'symbol': pair ,'interval': timeFrame ,'limit': 100}
+                if tupeHistory :
+                    _json.update({'startTime': tupeHistory[0] ,'endTime': tupeHistory[1] })
+
                 async with session.get(self.url ,params=_json ,headers= self.header ,timeout=20) as response:
                     
                     if response.status == 200:
 
-                        mainPrice = await response.json()
-                        self._coinPrice(coin ,timeFrame ,mainPrice)
+                        priceData = await response.json()
+                        if tupeHistory:
+                            self._setHistoryPrice(pair ,priceData ,timeFrame ,tupeHistory[0] ,tupeHistory[1])
                         
+                        else:
+                            self._setCurrentPrice(pair ,priceData ,timeFrame)
+
                     else:
                         raise f'sendRequest.[status: {response.status} ]'
                     
 
             except asyncio.TimeoutError as e:
-                self.log(f'sendRequest.[TimeoutError | coin: {coin} ,timeFrame: {timeFrame}]' ,'-')
+                self.log(f'sendRequest.[TimeoutError | pair: {pair} ,timeFrame: {timeFrame}]' ,'-')
 
             except ValueError as ve :
-                self.log(f'sendRequest.[Value Error in decode request Json | coin: {coin} ,timeFrame: {timeFrame}]' ,'!!')
+                self.log(f'sendRequest.[Value Error in decode request Json | pair: {pair} ,timeFrame: {timeFrame}]' ,'!!')
             
             except Exception as e:
-                self.log(f'Error [{e} | coin: {coin} ,timeFrame: {timeFrame}]' , '!!')
+                self.log(f'Error [{e} | pair: {pair} ,timeFrame: {timeFrame}]' , '!!')
 
     def mainClerk(self):
         """
@@ -89,34 +110,32 @@ class RequestPrice( AccessToDataBase ):
 
         async def startJob():
             
-            tempTimer = {   
-                        '1m': {'remaining': 0 ,'cap': 1} ,
-                        # '5m': {'remaining': 0 ,'cap': 1} ,
-                        # '15m': {'remaining': 0 ,'cap': 1} ,
-                        # '1h': {'remaining': 0 ,'cap': 1} ,
-                        # '2h': {'remaining': 0 ,'cap': 1} ,
-                        # '4h': {'remaining': 0 ,'cap': 30} ,
-                        # '12h': {'remaining': 0 ,'cap': 45} ,
-                        # '1d': {'remaining': 0 ,'cap': 60} ,
-                        # '3d': {'remaining': 0 ,'cap': 200} ,
-                        # '1w': {'remaining': 0 ,'cap': 500} 
-                    }  
-
             while True:
                 
-                ls_timeFrame = []
-                cp_tempTimer = tempTimer.copy()
-                for frame ,value in cp_tempTimer.items() :
-                    if value['remaining'] == 0: 
-                        ls_timeFrame.append(frame)
-                        tempTimer[frame]['remaining'] = tempTimer[frame]['cap']
+                tasks = []
+                    
+                for key, value in self._getHistoryList().items() :  # {"btcusdt:1m" : "12345:12367"}
 
-                    else:
-                        tempTimer[frame]['remaining'] = tempTimer[frame]['remaining'] -1
+                    self._delKeyHistoryList(key)
 
-                coinList = self._coinsList(0 ,-1)
+                    pair = key.split(':')[0]
+                    timeFrame = key.split(':')[1]
+                    startTime = int(value.split(':')[0])
+                    endTime = int(value.split(':')[1])
 
-                tasks = [self.sendRequest(coin.upper() ,timeFrame) for coin in coinList for timeFrame in ls_timeFrame]
+                    tasks.append(self.sendRequest(pair.upper() ,timeFrame ,(startTime ,endTime)))
+                
+                for item in self._getCurrentList():
+
+                    pair = item.split(':')[0]
+                    timeFrame = item.split(':')[1]
+                    tasks.append(self.sendRequest(pair.upper() ,timeFrame))
+
+                if not tasks :
+
+                    sleep(1)
+                    continue
+
 
                 await asyncio.gather(*tasks)
 
