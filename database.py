@@ -76,6 +76,11 @@ class DataBase:
         return self.__REDIS.lrange(arg1 ,start ,end)
 
     @_checkExcept
-    def _Hkeys(self ,arg1):
+    def _hkeys(self ,arg1):
     
         return self.__REDIS.hkeys(arg1)
+
+    @_checkExcept
+    def _hdel(self ,arg1 ,arg2):
+
+        return self.__REDIS.hdel(arg1 ,arg2)
