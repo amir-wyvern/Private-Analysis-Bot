@@ -29,24 +29,28 @@ class BinanceAPIException(Exception ,Log):
         self.code = 0
         try:
             json_res = response.json()
+
         except ValueError:
             self.message = 'Invalid JSON error message from Binance: {}'.format(response.text)
+            
         else:
             self.code = json_res['code']
             self.message = json_res['msg']
-        self.status_code = response.status_code
-        self.response = json_res.update({'status_code' :self.status_code ,'code': self.code,'msg': self.message})
-        self.request = getattr(response, 'request', None)
 
-        self.log(f'Error BinanceException [msg: {self.message} ,code: {self.code}] ' ,'!!')
+        self.status_code = response.status_code
+        self.request = getattr(response, 'request', None) 
+
+        self.log(f'Error BinanceException [status: {self.status_code} ,code: {self.code} ,msg: {self.message}] ' ,'!!') 
 
     def __str__(self):  # pragma: no cover
-        return 'APIError(code=%s): %s' % (self.code, self.message)
+        return 'APIError(code=%s): %s' % (self.code, self.message) 
 
 
 class BinanceRequestException(Exception):
     def __init__(self, message):
+
         self.message = message
+        self.log(f'Error BinanceRequestException [msg: {self.message}] ' ,'!!') 
 
     def __str__(self):
         return 'BinanceRequestException: %s' % self.message
@@ -57,6 +61,8 @@ class BinanceOrderException(Exception):
     def __init__(self, code, message):
         self.code = code
         self.message = message
+        self.log(f'Error BinanceOrderException [code: {self.code} ,msg: {self.message}] ' ,'!!') 
+
 
     def __str__(self):
         return 'BinanceOrderException(code=%s): %s' % (self.code, self.message)
@@ -164,9 +170,18 @@ class Client(object):
         self.timestamp_offset = 0
 
         # init DNS and SSL cert
-        self.ping()
+      
+        res , status = self.ping() 
+        if status != 200 :
+            return res ,status
+            
         # calculate timestamp offset between local and binance server
-        res = self.get_server_time()
+
+        res , status = self.get_server_time()
+
+        if status != 200 :
+            return res ,status
+
         self.timestamp_offset = res['serverTime'] - int(time.time() * 1000)
 
     def _init_session(self):
@@ -269,13 +284,22 @@ class Client(object):
         response.
         """
         if not (200 <= self.response.status_code < 300):
-            BinanceAPIException(self.response)
+
+            err = BinanceAPIException(self.response)
+            return err ,self.response.status_code
+
         try:
-            res = self.response.json()
-            res.update({'status_code': self.response.status_code})
-            return res
+            
+            return self.response.json() ,self.response.status_code
+
         except ValueError:
-            BinanceRequestException('Invalid Response: %s' % self.response.text)
+            
+            status_code = self.response.status_code
+            if status_code == 200:
+                status_code = -1
+
+            err = BinanceRequestException('Invalid Response: %s' % self.response.text)
+            return err ,status_code
 
     def _get(self, path, signed=False, version=PUBLIC_API_VERSION, **kwargs):
         return self._request_api('get', path, signed, version, **kwargs)
@@ -588,7 +612,8 @@ class Client(object):
         :raises: BinanceRequestException, BinanceAPIException
 
         """
-        print(1)
+       
+       
         return self._get('klines', data=params, version=self.PRIVATE_API_VERSION)
 
     def get_ticker(self, **params):
