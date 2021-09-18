@@ -84,3 +84,13 @@ class DataBase:
     def _hdel(self ,arg1 ,arg2):
 
         return self.__REDIS.hdel(arg1 ,arg2)
+
+    @_checkExcept
+    def _pubsub(self):
+
+        return self.__REDIS.pubsub()
+
+    @_checkExcept
+    def _hsetnx(self ,arg1 ,arg2 ,arg3):
+
+        return self.__REDIS.hsetnx(arg1 ,arg2 ,arg3)
